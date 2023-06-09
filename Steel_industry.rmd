@@ -1,0 +1,405 @@
+---
+title: "PEC_02_02_Nathalia_Fernandez Rodrigues"
+author: "Nathalia Fernandez Rodrigues"
+date: "4/2/2022"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r, include=FALSE}
+#LibreriaS
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(FactoMineR)
+library(factoextra)
+library(performance)
+library(readr)
+library(GGally)
+library(stringr)
+library(moments) 
+library(lmtest)
+library(car)
+library(lubridate)
+```
+
+******
+# EJERCICIO 2
+******
+
+
+# Carga de datos
+
+
+Lectura del fichero de datos **"Steel_industry_data.csv"** se guardan los datos en un objeto con identificador denominado **Steel**
+
+```{r}
+setwd("C:/Users/natha/OneDrive/Desktop/MASTER - DS/2. TECNICAS DE ANALISIS ESTADISTICO/Data")
+steel <- read.csv("steel_data.csv", header=TRUE, sep=",", dec=".")
+```
+
+## *Análisis exploratorio de datos (EDA)*
+
+```{r}
+str(steel)
+```
+
+Se convierten las variables categoricas a Factor.
+
+```{r}
+steel$WeekStatus <- as.factor(steel$WeekStatus)
+steel$Day_of_week <- as.factor(steel$Day_of_week)
+steel$Load_Type <- as.factor(steel$Load_Type)
+```
+
+```{r}
+summary(steel)
+```
+
+**NUMERICAS**
+```{r}
+steel %>%
+  select(where(is.numeric)) %>%
+  pivot_longer(everything()) %>%
+  ggplot() + 
+  geom_histogram(aes(x = value)) + 
+  facet_wrap(~ name, scales = "free")
+```
+
++ Se puede apreciar que ninguna de las distribuciones en los histogramas es normal.
++ La variable *NSM* parece ser discreta.
++ La variable **CO2.tCO2.** (emision de dioxido de carbono) en la mayoria de las horas es 0.
++ La variable **Usage_kWh** tiene una asimetria  positiva.
++ La variable **Leading_Current_Reactive_Power_kVarh** tiene una asimetria positiva.
++ La variable **CO2.tCO2.** tiene una asimetria positiva.
++ La variable **Lagging_Current_Reactive.Power_kVarh** tiene una asimetria positiva.
++ La variable **Leading_Current_Power_Factor** tiene una asimetria negativa.
++ La variable **Lagging_Current_Power_Factor** tiene una asimetria negativa.
+
+**CATEGORICAS**
+
+```{r}
+steel %>%
+  select(where(is.factor)) %>%
+  pivot_longer(everything()) %>%
+  ggplot() + 
+  geom_bar(aes(x = value)) + 
+  facet_wrap(~ name, scales = "free")
+
+```
+
++ Hay más load_type de tiempo light y menos de Maximo
++ Todos los dias de la semana estan en un promedio de 5000, excepto el "lunes" que esta sobre ese valor
++ Hay un valor de 25000 observaciones los dias de semana, y 10000 los fines de semana.
+
+
+
+## *Grafico de la distribución de la variable objetivo*
+
+```{r}
+resumen <-steel %>%
+  summarise(
+    media = mean(Usage_kWh),
+    mediana = median(Usage_kWh),
+    media_win = mean(Usage_kWh, trim = 0.1),
+    desviacion_tipica = sd(Usage_kWh),
+    varianza = var(Usage_kWh),
+    IQR = IQR(Usage_kWh),
+    maximo = max(Usage_kWh),
+    minimo = min(Usage_kWh),
+    Q1=quantile(Usage_kWh,0.25),
+    Q3=quantile(Usage_kWh,0.75))
+
+print(resumen)
+
+```
+
+```{r}
+steel %>%
+  ggplot() +
+  geom_histogram(aes(x =  Usage_kWh)) +
+  theme_light() +
+  geom_vline(
+    data = resumen %>%
+      select(media, mediana, media_win, Q1, Q3)%>%
+      pivot_longer(everything(), names_to = "Estadísticos de localización"),
+    aes(xintercept = value, col = `Estadísticos de localización`), size = 1.5)
+```
+
++ Siendo su media 27.38689 mayor que su mediana 4.57, podemos confirmar que su distribucion es asimetica positiva. 
+
++ Se puede evidenciar que la variable Usage_kWh no se distribuye normalmente porque los datos estan concentrados hacia el lado izquierdo de la grafica.
+
++ Siendo la desviacion tipica 33.44438, esto quiere decir que datos varian en 33.44438 del valor de la media. 
+
++ Se aprecia entre Q1 y Q3, que el 50% de los datos se concentran en la franja entre 3.2	y 51.2375.
+
+
+# *Modelo de regresión lineal*
+
+Realizamos un modelo sin la variable date.
+```{r}
+steel2 = select(steel, -ï..date)
+Modelo_steel =  lm(Usage_kWh ~ .,  data = steel2)
+```
+
+Vemos el resumen del modelo, algunas variables y sus niveles son mas significativos que otros.
+
+```{r}
+summary(Modelo_steel)
+```
+
+Aplicamos al modelo un "backward"
+
+```{r}
+step(Modelo_steel, direction = "backward", trace = 0)
+```
+
+
+
+```{r}
+Molde_Steel_Final = lm(Usage_kWh ~ Lagging_Current_Reactive.Power_kVarh + 
+    Leading_Current_Reactive_Power_kVarh + CO2.tCO2. + Lagging_Current_Power_Factor + 
+    Leading_Current_Power_Factor + NSM + Day_of_week + Load_Type, 
+    data = steel2)
+summary(Molde_Steel_Final)
+par(mfrow=c(2,2))
+plot(Molde_Steel_Final)
+check_model(Molde_Steel_Final)
+```
+
+
+De lo anterior se puede concluir lo siguiente:
+
++ Variable interceptept (B0), es significativa.
++ El R2 y R2 Ajustado es un 98%, considerado bueno para la explicacion del modelo.
+
+Las variables significativas son: 
+
++ **Los niveles de Load_Type:** Load_TypeMedium_Load y Load_TypeMaximum_Load
++ **Los niveles de Day_of_week:** Day_of_weekTuesday y Day_of_weekSunday
++ Lagging_Current_Reactive.Power_kVarh
++ Leading_Current_Reactive_Power_kVarh
++ CO2.tCO2.
++ Lagging_Current_Power_Factor
++ Leading_Current_Power_Factor    
++ La variable NSM es menos significativa que las anteriores
+
+
+**Las observaciones son independientes** 
+
++ **Hipotesis nula: $H_{0}=$ ** Son independientes las variables
++ **Hipotesis alternativa: $H_{1}\neq$ ** no son independientes
+
+```{r}
+chisq.test(steel2$CO2.tCO2., steel2$Usage_kWh)
+```
+Siendo el p-value inferior a los niveles de significancia de Alpha = 0.05, podemos rechazar la hipotesis nula de que las variables CO2.tCO2. y Usage_kWh sean independientes.
+
+
+En el grafico **Collinearity** se ve un problema de colinealidad entre las variables
+
++ Vemos que al ser low y por debajo de 5, no existe multicolinealidad en las variables Day_of_week y NSM 
++ Existe una multicolinealidad moderadad en la variable Load_Type.
++ Existen variables altamente correlacionadas como: CO2.tCO2., Leading_Current_Reactive_Power_kVarh, Leading_Current_Power_Factor, Lagging_Current_Power_Factor y Lagging_Current_Reactive.Power_kVarh.
+
+Ademas aplicamos el calculo del **Factor de inflacion de la varianza** donde se confirma que hay varriables bajamente correlacionadas y otras altamente correlacionadas. 
+
+```{r}
+vif(Molde_Steel_Final)
+```
+
+
+**La variable objetivo es continua**
+
+```{r}
+class(steel$Usage_kWh)
+```
+
+Se puede observar que es una variable numerica y continua. 
+
+**Las relaciones son lineales**
+
++ En el grafico **Linearity** , se aprecian los puntos cercanos a la linea recta y poco dispersos, indicativo de una posible linealidad en los datos. Ademas, En el gráfico **Residuals vs. Fitted** podemos ver que la curva de ajuste en rojo es muy similar a una recta, lo que señalaría que valores observados y residuos se distribuyen entre con muy poca aleatoriamente.
+
+
+**Homocedasticidad de los residuos**
+
++ En el grafico **Homgeneity of Variance y Residuals vs Fitted***, podemos apreciar que los puntos se encuentran muy cercanos a la linea recta y no estan muy dispersos entre si, que son constantes y no varian mucho con respecto a la recta, por lo que podrian considerarse que hay homocedasticidad, sin embargo, al principio de la grafica, se observan puntos alejados y dispersos por lo cual la varianza no es constante en todo el grafico, lo que pone en duda la homocedasticidad y por ellos nos planteamos el siguiente contraste de hipotesis. 
+
+**Contraste de hipotesis**
+
+Para ello se comprueba aplicando el Test de Breusch-Pagan y se plantean las siguientes hipótesis:
+
++ **Hipotesis nula: $H_{0}:$ ** Los errores en el modelo lineal tienen varianza constante (homocedásticos).
++ **Hipotesis alternativa: $H_{1}:\neq$ ** Los errores en el modelo lineal tienen varianza no constante (heterocedásticos).
+
+```{r}
+bptest(Molde_Steel_Final)
+```
+
+Siendo un p-value menor al nivel de significancia de Alpha = 0.05, se rechaza la hipotesis nula y por lo tanto los datos son heterocedasticos.
+
+**Independencia de los residuos**
+
+**Contraste de hipotesis**
+
++ **Hipotesis nula: $H_{0}:$ ** Son independientes
++ **Hipotesis alternativa: $H_{1}:\neq$ **: no son independientes
+
+```{r}
+dwtest(Molde_Steel_Final, data = steel2)
+```
+Siendo el p-value inferior al nivel de significancia de Alpha = 0.05, rechazamos la hipotesis nula de que los residuos son independientes. 
+
+
+**Normalidad de los residuos**
+
++ En el grafico **Normal of Residuals** y **Normal Q-Q**, se aprecian los puntos cerca  a la linea recta,  sin embargo en ambos extremos podemos apreciar una  desviacion de los puntos. Ademas en el grafico **Normal of Residuals** podemos ver que la curva de densidad no se ajusta a la linea de la normalidad. Es por ello que nos planteamos un contraste de hipotesis:
+
+
+**Contraste de hipotesis**
+
++ **Hipotesis nula: $H_{0}:$ ** Hay normalidad
++ **Hipotesis alternativa: $H_{1}:\neq$ **: No hay normalidad
+
+```{r}
+moments::jarque.test(Molde_Steel_Final$residuals)
+```
+
+Siendo el p-value menor al nivel de significancia de Alpha = 0.05, podemos rechazar la hipotesis nula, indicando que no hay normalidad en los datos. 
+
+
+# *Análisis de componentes principales*
+
+```{r}
+Matriz.pca = steel %>% select_if(is.numeric)
+steel_pca = prcomp(scale(Matriz.pca))
+summary(steel_pca)
+```
+
+```{r}
+fviz_screeplot(steel_pca)
+fviz_pca_var(steel_pca, axes = c(1,2), col.var = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+En el grafico Scree plot, vemos que cambia la forma de decrecer a partir de la segunda dimension, por lo tanto deducimos que seria bueno quedarnos con el PC2 para trabajar con un 85%. 
+
++ Las variables  Leading_Current_Power_Factor, contribuye positivamente al segundo componente, esta es contraria  a la Leading_Current_Reactive_Power_kVarh,lo que indica una correlacion negativa entre ellas.
+
++ Las variables Lagging_Current_Power_Factor y NSM tienen la misma dimension, por lo que podemos deducir que tienen un comportamiento similar.
+
++ Las variables Lagging_Current_Reactive.Power_kVarh, CO2.tCO y Usage_kWh, se encuentran apuntando hacia la misma dimension y estan muy cerca, por lo que podemos deducir que tienen un comportamiento similar. 
+
+
+# *PREGUNTAS*
+
+## ¿Cuando se consume mas energia, los fines de semana o entre semana?
+
+```{r}
+  ggplot(data= steel, aes(x =Usage_kWh, y=WeekStatus, fill=WeekStatus)) +
+  geom_bar(stat= "identity") + coord_flip(expand = TRUE) +
+  ggtitle ("Consumo de energia Dias de semana vs Fines de semana")
+```
+
++ Podemos observar en el grafico que el consumo de energia de las industrias de acero es mayor los dias de semana.
+
+## ¿Que dia de la semana hay mas consumo y menor consumo? 
+
+```{r}
+  ggplot(data= steel, aes(x =Usage_kWh, y=Day_of_week, fill=WeekStatus)) +
+  geom_bar(stat= "identity") + coord_flip(expand = TRUE)+
+  ggtitle ("Consumo de energia por dia de la semana")
+```
+
++ Podemos observar que el dia se la semana que mas consumo de energia se produce es el Jueves.
++ Podemos observar que el dia de la semana que menos consumo de energia se produce es el domingo.
+
+## ¿Que Load_Type se consume mas entre semana y fines de semana?
+
+```{r}
+steel  %>% ggplot(aes(x =Usage_kWh, y= WeekStatus, fill= Load_Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  ggtitle ("Consumo de energia por Tipo de Carga") + 
+  coord_flip(expand = TRUE)
+
+```
+
++ Podemos observar que proporcionalmente el tipo de carga tiene un comportamiento similar los dias de semana y los fines de semana, en ambos es mayor la carga de tipo Menium , y es menor la carta de tipo Light
+
+## ¿Que tipo de carga se consume mas y en que dia de la semana?
+
+```{r}
+steel  %>% ggplot(aes(x =Usage_kWh, y= Day_of_week, fill= Load_Type)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+  ggtitle ("Consumo de energia por dia, por Tipo de Carga")+
+  coord_flip(expand = TRUE)
+```
+
++ Podemos observar que en la mayoria de los dias la carga con mayor consumo energetico es de tipo "Medium".
++ Sin embargo, tambien se observa que el dia "Tuesday"y "Sunday", el comportamiento es distinto y la carga de tipo "Maximum" es la mayor.
++ Tambien , observamos que el dia "Sunday", hay mas consumo de energia de carga de tipo "light", que de carga "Medium", lo contrario al resto de dias.
+
+
+## ¿Cuando hay mas emisiones de CO2?
+
+```{r}
+  ggplot(data= steel, aes(x =CO2.tCO2., y=WeekStatus, fill=WeekStatus)) +
+  geom_bar(stat= "identity") + coord_flip(expand = TRUE)+
+  ggtitle ("Emision de CO2 Fines de Semana y Dias de Semana")
+
+```
+
++ Podemos observar que la emision de CO2 tiene un comportamiento similar al consumo de energia, pues los dias de semana hay mucho mas emision con respecto a los fines de semana. 
+
+## ¿Que dias de la semana hay mas emisiones de CO2?
+
+```{r}
+  ggplot(data= steel, aes(x =CO2.tCO2., y=reorder(Day_of_week,CO2.tCO2.), fill=Day_of_week)) +
+  ggtitle ("Emision de CO2 por dia de la semana.")+
+  geom_bar(stat= "identity") + coord_flip(expand = TRUE)
+```
+
++ El dia de semana que tiene menos emision de CO2 es "sunday", mientras que el dia de semana con mayor emision es el "Thursday".
+
+## ¿Cuanto es el nivel de CO2 segun el tipo de carga y el dia de la semana?
+
+```{r}
+steel  %>% ggplot(aes(x =CO2.tCO2., y= Day_of_week, fill= Load_Type)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  ggtitle ("Emision de CO2 por tipo de carga y dias de semana.")+
+  coord_flip(expand = TRUE)
+```
+
++ Podemos observar que la emision de CO2 supera el valor de 0.06 cuando le tipo de carga es "Maximum" o "Medium"
++ Podemos observar que el dia "Tuesday", es el unico donde el tipo de carga que mas emite CO2 es "Maximum", puede estar relacionado con la grafica anterior "Consumo de energia por dia, por Tipo de Carga", donde vemos que este dia la cantidad de energia que mas se consume es de tipo "Maximum".
+
+Para enter la relacion entre estas graficas, realizamos el siguiente grafico de correlación:
+
+## ¿Cuanto mas consumo de energia hay, mayor es la emision de CO2?
+
+```{r}
+pearson = steel %>%
+  select_if(is.numeric) %>%
+  cor(method = "pearson") %>%
+  round(2) %>%
+  ggcorrplot::ggcorrplot(hc.order = TRUE, 
+                         lab = TRUE)
+print(pearson)
+```
+
++ Existe una alta correlación positiva entre las variables Usage_kWh y CO2.tCO2 de un 0.99.
++ Existe una alta correlacion negativa entre las variables Leading_Current_Power_Factor y Leanding_Current_Reactive_power_kVarh de un 0.94.
+
